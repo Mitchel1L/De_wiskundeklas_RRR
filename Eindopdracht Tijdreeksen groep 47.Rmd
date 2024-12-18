@@ -19,9 +19,10 @@ library(ggrepel)
 
 
 
-```{r cars}
+```{r}
+file_data <- read.csv("C:\\Users\\mitch\\OneDrive\\Documenten\\Studie Toegepaste wiskunde\\Tijdreeksen\\datasets\\datasets\\filedata.csv", sep = ";")
 
-
+weer_data <- read.csv("C:\\Users\\mitch\\OneDrive\\Documenten\\Studie Toegepaste wiskunde\\Tijdreeksen\\datasets\\datasets\\weer.csv", sep = ";")
 
 ```
 
@@ -33,21 +34,19 @@ library(ggrepel)
 
 
 
+```
+
+
+```{r}
+file_data
+
+
 
 ```
 
 
 ```{r}
-
-
-
-
-```
-
-
-```{r}
-
-
+weer_data
 
 
 ```
