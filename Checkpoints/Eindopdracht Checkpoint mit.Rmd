@@ -1,0 +1,703 @@
+---
+title: "Eindopdracht"
+author: "Lucas"
+date: "2025-01-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(scales)
+library(tsibble)
+library(dplyr)
+library(fpp3)
+library(fable)
+library(ggplot2)
+library(ggpubr)
+library(tsfeatures)
+```
+
+
+
+```{r TIJD}
+files <- read.csv("filedata.csv", sep =";")
+```
+
+```{r TIJD}
+sum(is.na(files))
+max(files$duurMinuten)
+min(files$duurMinuten)
+str(files)
+```
+
+
+```{r TIJD}
+files$zwaarteKmMin <- as.numeric(files$zwaarteKmMin)
+files$BeginDatum <- as.Date(files$BeginDatum)
+filedag <- aggregate(zwaarteKmMin ~ BeginDatum, data = files, FUN = sum)
+alle_datums <- data.frame(BeginDatum = seq(min(as.Date(files$BeginDatum)), 
+                                           max(as.Date(files$BeginDatum)), 
+                                           by = "day"))
+filedag <- merge(alle_datums, filedag, by = "BeginDatum", all.x = TRUE)
+filedag$zwaarteKmMin[is.na(filedag$zwaarteKmMin)] <- 0
+colnames(filedag) <- c("Datum", "Zwaarte")
+filedag <- filedag %>%
+  as_tsibble(index = Datum)
+```
+
+```{r}
+
+```
+
+
+
+```{r fig.width=20, fig.height=6}
+filedag %>%
+  autoplot(Zwaarte/60) +
+  labs(
+    title = "Totale filezwaarte per dag in uren",
+    x = "Jaar",
+    y = "Aantal uren file"
+  ) +
+  scale_x_date(
+    breaks = seq(from = as.Date("2000-01-01"), to = as.Date("2024-01-01"), by = "1 year"), 
+    labels = scales::date_format("%Y"), 
+    limits = c(as.Date("2000-01-01"), as.Date("2024-01-01")) 
+  ) +
+  coord_cartesian(ylim = c(0, 3500)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+
+
+```{r fig.width=20, fig.height=6}
+file_decomp <- filedag %>%model( STL(Zwaarte ~ trend(window = 366) +season(window = "periodic"), robust = TRUE) ) %>% components()
+autoplot(file_decomp) +
+  labs(
+    title = "STL-decompositie van dagelijkse filezwaarte",
+    x = "Jaar",
+    y = "Filezwaarte"
+  )  +
+  scale_x_date(
+    breaks = seq(from = as.Date("2000-01-01"), to = as.Date("2024-01-01"), by = "1 year"),
+    labels = scales::date_format("%Y"),  
+    limits = c(as.Date("2000-01-01"), as.Date("2024-01-01")) 
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+```
+```{r fig.width=20, fig.height=6}
+file_decomp_2023 <- filedag %>%
+  filter(Datum >= as.Date('2023-01-07') & Datum < as.Date('2023-04-01')) %>%
+  model( STL(Zwaarte ~ trend(window = 15) +season(window = "periodic"), robust = TRUE) ) %>% components()
+
+weekends <- data.frame(
+  start = seq(as.Date("2023-01-07"), as.Date("2023-04-01"), by = "week"),
+  end = seq(as.Date("2023-01-08"), as.Date("2023-04-02"), by = "week")
+)
+
+# Plot de data met weekenden gearceerd
+autoplot(file_decomp_2023) +
+  # Arceer de weekenden
+  geom_rect(
+    data = weekends, 
+    aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf),
+    fill = "blue", alpha = 0.2
+  ) +
+  labs(
+    title = "STL-decompositie van dagelijkse filezwaarte tussen 7 januari en 1 april 2023",
+    x = "Week",
+    y = "Filezwaarte"
+  ) +
+  scale_x_date(
+    date_breaks = "1 week",         # Zet een label voor elke week
+    date_labels = "%Y-%m-%d",      # Formatteer als 'jaar-maand-dag'
+    limits = c(as.Date("2023-01-01"), as.Date("2023-04-01")) # Beperk x-as tot specifiek bereik
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+
+1b)   De trend is stijgend tot het jaar 2008, vervolgens dalend tot 2014 en stijgt weer tot 2020. Daarna is er een flinke daling zichtbaar in het jaar 2020. Daarna stijgt het weer. Verder is er ook een overduidelijk seizoenscomponent te zien, waarbij het begin en het einde van het jaar laag is, en in het voorjaar en het najaar hoog is. 
+
+Vervolgens is er gekeken naar een subset van de tijdreeks, namelijk van de eerste 13 weken van 2023 met uitzondering van de eerste week, waarin het nog kerstvakantie was. Dit is gedaan om beter het verloop per week te zien. Hierdoor kunnen we concluderen dat er nog een tweede seizoenscomponent is, die weekelijks is. In de STL decompostite is het weekend blauw gemarkeerd om beter de weken te zien. Dan is te zien dat de dinsdagen en donderdagen steeds het hoogst zijn, maandagen, woensdagen en vrijdagen zijn nog steeds druk maar lager en de weekenden zijn het laagst.
+
+1c)   Er wordt onderscheid gemaakt in gebeurtenissen die invloed hadden voor 1 of enkele dagen en gebeurtenissen voor de langere termijn.
+        Er zijn drie pieken van filezwaarte boven de 3000 uur maal kilometer. 
+          1. In november 2005 was er een zeer zware sneeuwstorm die tot ongekende files leidde.
+          2. December 2010 was een zeer koude maand en halverwege de maand viel een grote hoeveelheid sneeuw in de randstad. De piek was iets lager dan de piek in 2005 ondanks dat er              meer sneeuw viel, maar omdat deze gebeurtenis plaatsvond in december, waar veel mensen al op vakantie waren, viel de piek naar verwachting iets lager uit.
+          3. In februari 2012 viel er ook veel sneeuw in Noord-Holland, Utrecht en Friesland. 
+        Er waren in deze periode ook gebeurtenissen die invloed hebben op de langere termijn. De twee belangrijkste worden benoemd.
+          1. In 2008 begon de financiële crisis waardoor de welvaart daalde. Daarom nam zeer waarschijnlijk ook het aantal files over de jaren af in plaats van toe.
+          2. In 2020 brak het coronavirus uit, waardoor de overheid de bevolking sterk aanraadde om thuis te werken. Ook werden meerdere lockdowns van kracht. Dit leidde tot een flinke maar wel tijdelijk daling van de filezwaarte in Nederland.
+        
+
+```{r TIJD}
+sd(filedag$Zwaarte)
+quantile(filedag$Zwaarte)
+IQR(filedag$Zwaarte)
+```
+
+2a) de standaarddeviatie van de data is ruim 29000. 20000 is daarom een aardig grote bandbreedte om voorspellingen te maken. Waneer de 37 uitbijters worden verwijderd, is de standaarddeviatie gedaald naar minder dan 20000.
+
+
+```{r TIJD}
+file_outliers <- file_decomp %>%
+  filter(remainder %in% boxplot.stats(file_decomp$remainder, coef = 3)$out)
+
+file_cleaned <- file_decomp %>%
+  filter(!remainder %in% file_outliers$remainder)
+
+sd_cleaned <- sd(file_cleaned$remainder)
+
+quantiles_cleaned <- quantile(file_cleaned$remainder)
+
+iqr_cleaned <- IQR(file_cleaned$remainder)
+
+# Toon de resultaten
+sd_cleaned
+quantiles_cleaned
+iqr_cleaned
+
+```
+
+
+```{r TIJD}
+file_train <- filedag %>% filter(Datum >= as.Date('2023-01-02') & Datum < as.Date('2023-10-02'))
+file_test <- filedag %>% filter(Datum >= as.Date('2023-10-02') & Datum < as.Date('2023-12-18'))
+```
+
+
+```{r TIJD}
+file_train_sets <- file_train %>% stretch_tsibble(.init = 15, .step = 1, .id='id')
+file_fit <- file_train_sets %>%
+  model(
+    Drift = RW(Zwaarte ~ drift()),
+    Mean = MEAN(Zwaarte),
+    Naive = NAIVE(Zwaarte),
+    SNaive = SNAIVE(Zwaarte)
+    )
+
+file_fc <- file_fit %>% forecast(h = 77)
+
+file_fc <- file_fc %>%
+  left_join(file_test, by = "Datum")
+
+file_MAE <- file_fc %>%
+  as_tibble() %>%
+  group_by(id, .model) %>%
+  summarize(MAE = mean(abs(.mean - Zwaarte.y), na.rm = TRUE), .groups = "drop")
+
+file_minMAE <- file_MAE %>%
+  group_by(.model) %>%
+  slice_min(MAE, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+file_minMAE <- file_minMAE %>%
+  left_join(file_train_sets, by = "id")
+
+file_minMAE %>%
+  group_by(.model) %>%
+  filter(Datum == min(Datum)) %>%
+  summarize(
+    Model = .model,
+    startmoment = min(Datum),
+    MAE = min(MAE)
+  )
+```
+
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+file_train %>%
+  gg_tsdisplay(Zwaarte, plot_type = 'partial', lag_max = 38*7+1)
+```
+
+```{r TIJD}
+
+```
+
+
+```{r TIJD}
+file_train_sets <- file_train %>% stretch_tsibble(.init = 15, .step = 1, .id='id')
+file_fit <- file_train_sets %>%
+  model(
+    Drift = RW(Zwaarte ~ drift()),
+    Mean = MEAN(Zwaarte),
+    Naive = NAIVE(Zwaarte),
+    SNaive = SNAIVE(Zwaarte),
+    `Holt-Winters` = ETS(Zwaarte ~ error("A") + trend("A") + season("A")),
+    ANA = ETS(Zwaarte ~ error("A") + trend("N") + season("A")),
+    ANN = ETS(Zwaarte ~ error("A") + trend("N") + season("N"))
+    )
+
+file_fc <- file_fit %>% forecast(h = 77)
+
+file_fc <- file_fc %>%
+  left_join(file_test, by = "Datum")
+
+file_MAE <- file_fc %>%
+  as_tibble() %>%
+  group_by(id, .model) %>%
+  summarize(MAE = mean(abs(.mean - Zwaarte.y), na.rm = TRUE), .groups = "drop")
+
+file_minMAE <- file_MAE %>%
+  group_by(.model) %>%
+  slice_min(MAE, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+file_minMAE <- file_minMAE %>%
+  left_join(file_train_sets, by = "id")
+
+file_minMAE %>%
+  group_by(.model) %>%
+  filter(Datum == min(Datum)) %>%
+  summarize(
+    Model = .model,
+    startmoment = min(Datum),
+    MAE = min(MAE)
+  )
+```
+
+```{r fig.width=20, fig.height=6}
+file_train_sets2 <- file_train %>% slide_tsibble(.size = 14, .step = 1, .id = 'id')
+
+file_fc_mult <- file_train_sets2 %>%
+  model(
+    #Drift = RW(Zwaarte ~ drift()),
+    #Mean = MEAN(Zwaarte),
+    #Naive = NAIVE(Zwaarte),
+    #SNaive = SNAIVE(Zwaarte),
+    #`Holt-Winters` = ETS(Zwaarte ~ error("A") + trend("A") + season("A")),
+    ANA = ETS(Zwaarte ~ error("A") + trend("N") + season("A"))
+  ) %>%
+  forecast(h =77)
+
+file_fc_mult <- file_fc_mult %>%
+  group_by(.model, id) %>%
+  mutate(h = row_number()) %>%
+  ungroup()
+
+file_fc_mult <- file_fc_mult %>% left_join(filedag, by = 'Datum')
+file_fc_mult <- file_fc_mult %>% mutate(error = .mean - Zwaarte.y)
+  
+file_fc_mult <- file_fc_mult %>%
+  group_by(.model, h) %>%
+  mutate(exceeded = ifelse(min(error, na.rm = TRUE) < -20000 | max(error, na.rm = TRUE) > 20000, TRUE, FALSE)) %>%
+  ungroup()
+
+file_fc_mult %>%
+  ggplot(aes(color = exceeded, x = as.factor(h), y = error)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 20000, linetype = 'dashed', colour = 'blue') +
+  geom_hline(yintercept = -20000, linetype = 'dashed', colour = 'blue') +
+  scale_color_manual(values = c('black','red')) +
+  theme(legend.position = 'none') +
+  labs(x = 'Voorspellingshorizon (in dagen)',
+       y = 'Absolute fout',
+       title = 'Absolute fout afhankelijk van de voorspellingshorizon') +
+  facet_wrap(vars(.model))
+       
+       
+```
+
+```{r TIJD}
+
+
+
+
+
+
+```
+
+
+
+
+Opgave 3
+Voorspellen voor 1 week 
+rmse
+
+```{r TIJD}
+
+file_train_op3 <- filedag %>% filter(Datum >= as.Date('2023-01-02') & Datum < as.Date('2023-12-11'))
+file_test_op3 <- filedag %>% filter(Datum >= as.Date('2023-12-11') & Datum < as.Date('2023-12-18'))
+
+file_train_sets3 <- file_train_op3 %>% slide_tsibble(.size = 21, .step = 1, .id = 'id')
+
+file_fit2 <- file_train_sets3 %>%
+  model(
+    Drift = RW(Zwaarte ~ drift()),
+    Mean = MEAN(Zwaarte),
+    Naive = NAIVE(Zwaarte),
+    SNaive = SNAIVE(Zwaarte),
+    Holt = ETS(Zwaarte ~ error("A") + trend("A") + season("N")),
+    `Holt-Winters` = ETS(Zwaarte ~ error("A") + trend("A") + season("A")),
+    ANA = ETS(Zwaarte ~ error("A") + trend("N") + season("A")),
+    ANN = ETS(Zwaarte ~ error("A") + trend("N") + season("N")),
+    ETS = ETS(Zwaarte)
+  )
+file_fc2 <- file_fit2 %>% forecast(h =7)
+
+file_fc2 <- file_fc2 %>%
+  left_join(file_test_op3, by = "Datum")
+
+file_RMSE <- file_fc2 %>% 
+  as_tibble() %>% 
+  group_by(id, .model) %>% 
+  summarize(id = id, RMSE = sqrt(mean((.mean - Zwaarte.y)^2))) %>% 
+  distinct() %>% 
+  ungroup()
+
+file_minRMSE <- file_RMSE %>% 
+  select(-id) %>% 
+  group_by(.model) %>% 
+  slice_min(n = 1, RMSE) %>% 
+  distinct()
+
+
+file_minRMSE <- file_minRMSE %>% left_join(file_RMSE, by = "RMSE")
+
+
+file_minRMSE <- file_minRMSE %>% 
+  left_join(file_train_sets3, by = "id")
+
+
+file_minRMSE %>% 
+  group_by(.model.x) %>% 
+  filter(Datum == min(Datum)) %>% 
+  summarize(Model = .model.x, startmoment = Datum, RMSE = RMSE) %>% 
+  select(-.model.x)
+
+
+```
+
+```{r fig.width=20, fig.height=6}
+
+
+file_train_op3 %>%
+  gg_tsdisplay(Zwaarte, plot_type = 'partial', lag_max = 38*7+1)
+
+
+```
+
+```{r TIJD}
+file_train_op3 %>% features(Zwaarte, c("unitroot_ndiffs", "unitroot_nsdiffs"))
+
+
+```
+
+```{r TIJD}
+
+
+
+```
+
+
+
+
+
+```{r TIJD}
+parameters <- expand_grid(p = 0:3, d = 0:1, q = 0:3, P = 0:3, D = 0:1, Q = 0:3)
+
+
+parameters <- parameters %>% mutate(RMSE = NA)
+
+# vervolgens passen we elke combinatie van parameters toe op ARIMA()
+# en slaan we de bijbehorende RMSE op de testset op
+for (i in 1:nrow(parameters)){
+  parameters[i,"RMSE"] <- file_train_op3 %>% 
+    model(
+      ARIMA(Zwaarte ~ pdq(as.numeric(parameters[i,"p"]), 
+                      as.numeric(parameters[i,"d"]), 
+                      as.numeric(parameters[i,"q"])) + 
+                  PDQ(as.numeric(parameters[i,"P"]),
+                      as.numeric(parameters[i,"D"]),
+                      as.numeric(parameters[i,"Q"]),
+                      period = 7)
+            )
+    ) %>% 
+    forecast(h = 7) %>% 
+    accuracy(file_test_op3) %>% 
+    select(RMSE) %>% 
+    pull()
+}
+
+
+slice_min(parameters, order_by = RMSE, n = 10)
+
+
+
+```
+3A Conclusie:
+Met het testen blijkt dat van de relatief simpelere modellen een ETS met ANA ingevuld voor de error, het seizoen en de trend het het beste doet met een RMSE van 15459,97 Als vervolgens ook wordt gekeken naar ARIMA modellen blijkt dat een Arima model met de parameters p=2, d=1 , q=0, P=2, D=0, Q=0. Deze gaf een RMSE van 12263,05.
+
+
+
+
+```{r TIJD}
+
+```
+
+
+```{r TIJD}
+
+```
+
+
+
+
+
+```{r TIJD}
+weer <- read.csv("weer.csv", sep =";")
+
+
+weer <- weer %>% filter(YYYYMMDD>20000000)
+weer <- weer %>% filter(YYYYMMDD<20240000)
+
+weer
+
+```
+
+```{r fig.width=20, fig.height=70}
+
+
+
+weer <-weer %>% 
+  mutate(YYYYMMDD = ymd(YYYYMMDD))
+colnames(weer) <- c("Datum", "locatie", "meting", "meetwaarde")
+weer
+
+weer <- weer %>% 
+  filter(locatie == "De Bilt")
+weer <- weer[-c(2)]
+weer <- weer %>% 
+  as_tsibble(index = Datum, key = c( meting))
+
+
+
+```
+
+```{r TIJD}
+weer <- weer %>% pivot_wider(names_from = meting, values_from = meetwaarde)
+weer
+
+
+
+```
+
+
+
+```{r TIJD}
+
+#fileweer <- ts.union(filedag, weer)
+
+fileweer <- filedag %>% left_join(weer, by = "Datum")
+
+fileweer
+
+```
+
+
+
+```{r TIJD}
+
+doelvariabele <- "Zwaarte"
+
+andere_variabelen <- setdiff(names(fileweer), "Zwaarte")
+
+
+for (var in andere_variabelen) {
+
+  plot <- ggplot(fileweer, aes_string(x = var, y = doelvariabele)) +
+    geom_point(alpha = 0.7, color = "blue") +
+    labs(
+      title = paste("Scatterplot van", var, "tegen", doelvariabele),
+      x = var,
+      y = doelvariabele
+    ) +
+    theme_minimal()
+
+
+  print(plot)
+}
+
+
+```
+
+
+
+```{r TIJD}
+
+weer_var <- fileweer %>%
+  select(where(is.numeric)) %>%
+  select(-all_of("Zwaarte"))
+
+drop <- c("Datum")
+weer_var <-weer_var[,!(names(weer_var) %in% drop)]
+
+
+
+correlaties <- sapply(names(weer_var), function(var) {
+  cor(fileweer[["Zwaarte"]], fileweer[[var]], use = "complete.obs")
+})
+
+
+correlatie_resultaten <- data.frame(
+  Variabele = names(correlaties),
+  Correlatie = correlaties
+)
+
+correlatie_resultaten <- data.frame(
+  Variabele = names(correlaties),
+  Correlatie = correlaties
+)
+
+correlatie_resultaten <- correlatie_resultaten %>%
+  arrange(desc(abs(Correlatie)))
+
+print(correlatie_resultaten)
+
+
+```
+We hebben gekozen om te kijken naar correlaties van boven de 0,05
+
+De sterkste correlaties zijn de variabelen: "DR", "RH", "UG", "Q", "PN", "PG", "UN", "PX", "RHX", "TX", "TG", "VVX", "SQ", "T10N"
+Die betekenen
+
+DR: Neerlagduur in 0,1 uur
+RH: Etmaalsom van de neerslag in 0,1mm
+UG: Etmaalgemiddede relatieve vochtingheid in %
+Q: Globale straling in J/cm^3
+PN: Laagste uurwaarde van luchtdruk op zeeniveau in 0,1 hPa
+PG: Etmaalgemiddelde van luchtdruk op zeeniveau in 0,1 hPa
+UN: Minimum relatieve luchtvochtigheid in %
+PX: Hoogste uurwaarde van lucktdruk op zeeniveau in 0,1 hPa
+RHX: Hoogste uursom van de neerslag in 0,1mm
+TX: Maximum temperatuur in 0,1 graden C
+TG: Etmaalgemiddeelde temperatuur in 0,1 graden C
+VVX: Maximum optreden zicht
+SQ: zonneschijn duur in 0,1 uur
+T10N:Minimum grondtemperatuur in 0,1 graden C
+
+Met behulp van redenatie hebben we er voor gekozen deze variabelen niet mee te nemen:
+SQ, PX, PG, PN, 
+
+
+Dus uit correlaties en nadenken hebben de overige weersvariabelen de grootste samenhang met de filezwaarte.
+
+
+```{r TIJD}
+
+
+
+fileweer <-fileweer[c("Datum","Zwaarte","DR", "RH", "UG", "Q", "UN", "RHX", "TX", "TG", "VVX", "T10N")]
+
+
+
+#file_train_op3C <- filedag %>% filter(Datum >= as.Date('2023-01-02') & Datum < as.Date('2023-12-11'))
+#file_test_op3C <- filedag %>% filter(Datum >= as.Date('2023-12-11') & Datum < as.Date('2023-12-18'))
+
+
+```
+
+
+
+```{r TIJD}
+
+
+
+```
+
+
+
+```{r TIJD}
+
+
+
+```
+
+
+
+```{r TIJD}
+
+
+
+```
+
+
+
+```{r TIJD}
+
+
+
+```
+
+
+
+```{r TIJD}
+
+
+
+```
+
+
+
+```{r TIJD}
+
+
+
+```
+
+
+
+```{r TIJD}
+
+
+
+```
+
+
+
+```{r TIJD}
+
+
+
+```
+
+
+
+
+
+
+bronnen:
+sneeuwstorm 2005: https://www.weerplaza.nl/weerinhetnieuws/extreme-sneeuw-van-25-november-2005/6691/
+sneeuwstorm 2010: https://www.weeronline.nl/nieuws/weeroverzichten-2010-december
+sneeuwstorm: 2012: 
