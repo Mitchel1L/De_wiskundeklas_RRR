@@ -1,4 +1,4 @@
-# Tijdreeksen
+# Stantistienkie
 De wiskundeklas opgave
 
 
