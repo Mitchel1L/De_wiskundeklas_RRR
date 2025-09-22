@@ -1,0 +1,199 @@
+---
+title: "Eindopdracht"
+author: "Lucas"
+date: "2025-01-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+install.packages("ggplot2")
+install.packages("scales")
+install.packages("tsibble")
+library(scales)
+library(tsibble)
+library(dplyr)
+library(fpp3)
+library(fable)
+library(ggplot2)
+```
+
+
+
+```{r TIJD}
+files <- read.csv("filedata.csv", sep =";")
+```
+
+```{r TIJD}
+sum(is.na(files))
+max(files$duurMinuten)
+min(files$duurMinuten)
+str(files)
+```
+
+
+```{r TIJD}
+files$zwaarteKmMin <- as.numeric(files$zwaarteKmMin)
+files$BeginDatum <- as.Date(files$BeginDatum)
+filedag <- aggregate(zwaarteKmMin ~ BeginDatum, data = files, FUN = sum)
+alle_datums <- data.frame(BeginDatum = seq(min(as.Date(files$BeginDatum)), 
+                                           max(as.Date(files$BeginDatum)), 
+                                           by = "day"))
+filedag <- merge(alle_datums, filedag, by = "BeginDatum", all.x = TRUE)
+filedag$zwaarteKmMin[is.na(filedag$zwaarteKmMin)] <- 0
+colnames(filedag) <- c("Datum", "Zwaarte")
+filedag <- filedag %>%
+  as_tsibble(index = Datum)
+```
+
+```{r}
+filedag %>%
+  autoplot(Zwaarte) +
+  labs(
+    title = "Totale filezwaarte per dag in minuten",
+    x = "Jaar",
+    y = "Aantal minuten file maal kilometer"
+  ) +
+  scale_x_date(
+    breaks = seq(from = as.Date("2000-01-01"), to = as.Date("2024-01-01"), by = "1 year"),
+    labels = scales::date_format("%Y"),
+    limits = c(as.Date("2000-01-01"), as.Date("2024-01-01"))
+  ) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  geom_ribbon(
+    aes(x = Datum, ymin = Zwaarte - 20000, ymax = Zwaarte + 20000), # Voeg x = time toe
+    fill = "green", # Gele kleur
+    alpha = 0.6, # Transparantie
+    inherit.aes = TRUE # Laat het de aes van de autoplot gebruiken (zorg ervoor dat de tijdsequentie wordt doorgegeven)
+  )
+
+
+```
+
+
+
+```{r fig.width=20, fig.height=6}
+
+
+filedag %>%
+  autoplot(Zwaarte/60) +
+  labs(
+    title = "Totale filezwaarte per dag in uren",
+    x = "Jaar",
+    y = "Aantal uren file"
+  ) +
+  scale_x_date(
+    breaks = seq(from = as.Date("2000-01-01"), to = as.Date("2024-01-01"), by = "1 year"), # Pas de datums aan
+    labels = scales::date_format("%Y"),  # Alleen het jaar weergeven
+    limits = c(as.Date("2000-01-01"), as.Date("2024-01-01"))  # Begin- en einddatum instellen
+  ) +
+  coord_cartesian(ylim = c(0, 3500)) +  # Stel limieten in voor de y-as
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Labels draaien indien nodig
+
+
+```
+
+
+
+```{r fig.width=20, fig.height=6}
+file_decomp <- filedag %>%model( STL(Zwaarte ~ trend(window = 366) +season(window = "periodic"), robust = TRUE) ) %>% components()
+autoplot(file_decomp) +
+  labs(
+    title = "STL-decompositie van dagelijkse filezwaarte",
+    x = "Jaar",
+    y = "Filezwaarte"
+  )  +
+  scale_x_date(
+    breaks = seq(from = as.Date("2000-01-01"), to = as.Date("2024-01-01"), by = "1 year"), # Pas de datums aan
+    labels = scales::date_format("%Y"),  # Alleen het jaar weergeven
+    limits = c(as.Date("2000-01-01"), as.Date("2024-01-01"))  # Begin- en einddatum instellen
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Labels draaien indien nodig
+
+
+
+```
+1b)   De trend is stijgend tot het jaar 2008, vervolgens dalend tot 2014 en stijgt weer tot 2020. Daarna is er een flinke daling zichtbaar in het jaar 2020. Daarna stijgt het weer. Verder is er ook een overduidelijk seizoenscomponent te zien, waarbij het begin en het einde van het jaar laag is, en in het voorjaar en het najaar hoog is.
+
+1c)   Er wordt onderscheid gemaakt in gebeurtenissen die invloed hadden voor 1 of enkele dagen en gebeurtenissen voor de langere termijn.
+        Er zijn drie pieken van filezwaarte boven de 3000 uur maal kilometer. 
+          1. In november 2005 was er een zeer zware sneeuwstorm die tot ongekende files leidde.
+          2. December 2010 was een zeer koude maand en halverwege de maand viel een grote hoeveelheid sneeuw in de randstad. De piek was iets lager dan de piek in 2005 ondanks dat er              meer sneeuw viel, maar omdat deze gebeurtenis plaatsvond in december, waar veel mensen al op vakantie waren, viel de piek naar verwachting iets lager uit.
+          3. In februari 2012 viel er ook veel sneeuw in Noord-Holland, Utrecht en Friesland. 
+        Er waren in deze periode ook gebeurtenissen die invloed hebben op de langere termijn. De twee belangrijkste worden benoemd.
+          1. In 2008 begon de financiële crisis waardoor de welvaart daalde. Daarom nam zeer waarschijnlijk ook het aantal files over de jaren af in plaats van toe.
+          2. In 2020 brak het coronavirus uit, waardoor de overheid de bevolking sterk aanraadde om thuis te werken. Ook werden meerdere lockdowns van kracht. Dit leidde tot een                   flinke maar wel tijdelijk daling van de filezwaarte in Nederland.
+        
+
+```{r TIJD}
+sd(filedag$Zwaarte)
+quantile(filedag$Zwaarte)
+IQR(filedag$Zwaarte)
+```
+
+2a) de standaarddeviatie van de data is ruim 29000. 20000 is daarom een aardig grote bandbreedte om voorspellingen te maken. Tussen de middelste 50% zit 44574
+
+
+```{r TIJD}
+file_outliers <- file_decomp %>%
+  filter(remainder %in% boxplot.stats(file_decomp$remainder, coef = 3)$out)
+
+file_cleaned <- file_decomp %>%
+  filter(!remainder %in% file_outliers$remainder)
+
+sd_cleaned <- sd(file_cleaned$remainder)
+
+quantiles_cleaned <- quantile(file_cleaned$remainder)
+
+iqr_cleaned <- IQR(file_cleaned$remainder)
+
+# Toon de resultaten
+sd_cleaned
+quantiles_cleaned
+iqr_cleaned
+
+```
+
+
+```{r TIJD}
+
+```
+
+
+```{r TIJD}
+filedag %>%
+  autoplot(Zwaarte)
+```
+
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+
+```{r TIJD}
+
+```
+bronnen:
+sneeuwstorm 2005: https://www.weerplaza.nl/weerinhetnieuws/extreme-sneeuw-van-25-november-2005/6691/
+sneeuwstorm 2010: https://www.weeronline.nl/nieuws/weeroverzichten-2010-december
+sneeuwstorm: 2012: 
